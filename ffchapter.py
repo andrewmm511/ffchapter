@@ -13,7 +13,12 @@ from glob import glob
 def get_abs_path(relative_path):
     return os.path.join(os.getcwd(), relative_path)
 
-def ensure_directories_exist():
+def ensure_directories_exist(input_file):
+    """Ensures that the required directories exist and creates them if not."""
+    if not os.path.exists(input_file):
+        print(f"[ERROR] '{input_file}' file not found.")
+        exit(1)
+    
     directories = ["tmp", "log"]
     for dir in directories:
         abs_dir_path = get_abs_path(dir)
@@ -41,7 +46,7 @@ def cleanup_directories():
         os.remove(ffjob_json_path)
         print(f"[INFO] '{ffjob_json_path}' file removed.")
 
-def verify_chapter_files():
+def verify_files():
     """Verify that all chapter files exist in the tmp folder."""
     chapter_files = glob("tmp/*.mkv")
     if not chapter_files:
@@ -223,22 +228,25 @@ def check_encoding_status(ffjob_info):
         total_encoded_time_seconds += encoded_time_seconds
        
         print(f"Encoding Speed: {fps} fps")
-        print(f"Time Encoded: {time_encoded} (hh:mm:ss)")
+        print(f"Chapter Length: {format_time_delta(chapter['length_in_seconds'])} (hh:mm:ss)")
+        print(f"Amount Encoded: {time_encoded} (hh:mm:ss)")
+        print(f"Chapter Completion: {encoded_time_seconds / chapter['length_in_seconds'] * 100:.2f}%")
    
     total_video_length = ffjob_info["total_length_in_seconds"]
-    print(f"\nTotal Encoded Time: {format_time_delta(total_encoded_time_seconds)} (hh:mm:ss)")
+    print(f"\nTotal Amount Encoded: {format_time_delta(total_encoded_time_seconds)} (hh:mm:ss)")
     print(f"Total Video Length: {format_time_delta(total_video_length)} (hh:mm:ss)")
     print(f"Completion: {total_encoded_time_seconds / total_video_length * 100:.2f}%")
    
     executed_datetime = datetime.strptime(ffjob_info["executed_datetime"], "%Y-%m-%d %H:%M:%S")
     elapsed_time = datetime.now() - executed_datetime
-    print(f"Total Encoding Time: {elapsed_time}")
+    print(f"Current Runtime: {elapsed_time}")
+    print(f"Estimated Time Left: {format_time_delta((total_video_length - total_encoded_time_seconds) / (total_encoded_time_seconds / elapsed_time.total_seconds()))} (hh:mm:ss)")
 
-def main(input_file, svt_av1_params, preset, crf, info, complete):
+def main(input_file, svt_av1_params, preset, crf, status, complete):
     """Main function to process the input file and generate ffmpeg commands."""
 
     if complete:
-        verify_chapter_files()
+        verify_files()
         concatenate_chapters()
         run_vmaf(input_file, "output.mkv")
         if user_confirmation():
@@ -246,12 +254,12 @@ def main(input_file, svt_av1_params, preset, crf, info, complete):
             pass
         else:
             print("[INFO] Cleanup aborted by user.")
-    elif info:
+    elif status:
         ffjob_info = get_ffjob_info()
         check_encoding_status(ffjob_info)
     else:
         print("[INFO] Script started. Preparing to process video file...")
-        ensure_directories_exist()
+        ensure_directories_exist(input_file)
         json_output = run_ffprobe(input_file)
         chapters = json_output['chapters']
         total_length = float(json_output['format']['duration'])
@@ -274,8 +282,8 @@ if __name__ == "__main__":
     parser.add_argument("--svt_av1_params", default=" tune=0:enable-overlays=1:scm=0:scd=1:lookahead=120:keyint=360:film-grain=3:input-depth=10:irefresh-type=1:lp=4", help="SVT-AV1 specific parameters as a string.")
     parser.add_argument("--preset", default="1", help="Encoding preset.")
     parser.add_argument("--crf", default="16", help="Constant Rate Factor for encoding quality.")
-    parser.add_argument("-info", action="store_true", help="Check the status of the current encoding tasks.")
+    parser.add_argument("-status", action="store_true", help="Check the status of the current encoding tasks.")
     parser.add_argument("-complete", action="store_true", help="Complete the encoding process by concatenating chapters and cleaning up.")
     args = parser.parse_args()
 
-    main(args.input_file, args.svt_av1_params, args.preset, args.crf, args.info, args.complete)
+    main(args.input_file, args.svt_av1_params, args.preset, args.crf, args.status, args.complete)
